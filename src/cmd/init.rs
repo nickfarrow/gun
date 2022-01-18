@@ -34,6 +34,33 @@ pub struct CommonArgs {
     network: Network,
 }
 
+#[derive(Clone, Copy, Debug, serde::Deserialize, serde::Serialize)]
+pub enum AddressKind {
+    Wpkh,
+    Tr,
+}
+
+impl FromStr for AddressKind {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s {
+            "wpkh" => AddressKind::Wpkh,
+            "tr" => AddressKind::Tr,
+            _ => return Err(anyhow!("invalid address kind. Must be p2wpkh or p2tr")),
+        })
+    }
+}
+
+impl std::fmt::Display for AddressKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AddressKind::Wpkh => write!(f, "{}", "wpkh"),
+            AddressKind::Tr => write!(f, "{}", "tr"),
+        }
+    }
+}
+
 #[derive(Clone, Debug, StructOpt)]
 pub enum InitOpt {
     /// Initialize a wallet using a seedphrase
@@ -49,6 +76,9 @@ pub enum InitOpt {
         /// Wallet has BIP39 passphrase
         #[structopt(long)]
         has_passphrase: bool,
+
+        #[structopt(long, default_value = "tr", name = "wpkh|tr")]
+        address_kind: AddressKind,
     },
     /// Initialize using a wallet descriptor
     Descriptor {
@@ -83,6 +113,8 @@ pub enum InitOpt {
         /// Initialize the wallet from a descriptor
         #[structopt(name = "xpub-descriptor")]
         xpub: String,
+        #[structopt(long, default_value = "tr", name = "wpkh|tr")]
+        address_kind: AddressKind,
     },
     /// Initialize using a Coldcard SD card path.
     ///
@@ -146,6 +178,7 @@ pub fn run_init(wallet_dir: &std::path::Path, cmd: InitOpt) -> anyhow::Result<Cm
             from_existing,
             n_words,
             has_passphrase,
+            address_kind,
         } => {
             let (sw_file, seed_words) = match from_existing {
                 Some(existing_words_file) => {
@@ -224,14 +257,34 @@ pub fn run_init(wallet_dir: &std::path::Path, cmd: InitOpt) -> anyhow::Result<Cm
             fs::write(secret_file, hex::encode(&bip85_bytes))?;
 
             let master_fingerprint = xpriv.fingerprint(&secp);
-
-            let temp_wallet = Wallet::new_offline(
-                bdk::template::Bip84(xpriv, bdk::KeychainKind::External),
-                Some(bdk::template::Bip84(xpriv, bdk::KeychainKind::Internal)),
-                common_args.network,
-                MemoryDatabase::new(),
-            )
-            .context("Initializing wallet with xpriv derived from seed phrase")?;
+            let temp_wallet = match address_kind {
+                AddressKind::Wpkh => {
+                    let (internal, external) = (
+                        bdk::template::Bip84(xpriv, bdk::KeychainKind::External),
+                        bdk::template::Bip84(xpriv, bdk::KeychainKind::Internal),
+                    );
+                    Wallet::new_offline(
+                        external,
+                        Some(internal),
+                        common_args.network,
+                        MemoryDatabase::new(),
+                    )
+                    .context("Initializing wallet with xpriv derived from seed phrase")?
+                }
+                AddressKind::Tr => {
+                    let (internal, external) = (
+                        bdk::template::Bip86(xpriv, bdk::KeychainKind::External),
+                        bdk::template::Bip86(xpriv, bdk::KeychainKind::Internal),
+                    );
+                    Wallet::new_offline(
+                        external,
+                        Some(internal),
+                        common_args.network,
+                        MemoryDatabase::new(),
+                    )
+                    .context("Initializing wallet with xpriv derived from seed phrase")?
+                }
+            };
 
             let signers = vec![GunSigner::SeedWordsFile {
                 file_path: sw_file,
@@ -291,10 +344,11 @@ pub fn run_init(wallet_dir: &std::path::Path, cmd: InitOpt) -> anyhow::Result<Cm
             common_args,
             psbt_signer_dir,
             ref xpub,
+            address_kind,
         } => {
             create_secret_randomness(&wallet_dir)?;
-            let external = format!("wpkh({}/0/*)", xpub);
-            let internal = format!("wpkh({}/1/*)", xpub);
+            let external = format!("{}({}/0/*)", address_kind, xpub);
+            let internal = format!("{}({}/1/*)", address_kind, xpub);
 
             // Check xpub is valid
             let _ = Wallet::new_offline(
