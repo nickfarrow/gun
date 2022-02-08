@@ -4,7 +4,6 @@ use bdk::{
     keys::DescriptorSinglePub,
     miniscript::{descriptor::Wsh, policy::concrete::Policy, Descriptor, DescriptorPublicKey},
 };
-use miniscript::descriptor::Cached;
 use olivia_secp256k1::fun::{g, marker::*, s, Point, Scalar, G};
 use std::convert::{Infallible, TryInto};
 
@@ -147,7 +146,7 @@ impl JointOutput {
             .translate_pk(&mut |pk: &bitcoin::PublicKey| -> Result<_, Infallible> {
                 Ok(DescriptorPublicKey::SinglePub(DescriptorSinglePub {
                     origin: None,
-                    key: *pk,
+                    key: miniscript::descriptor::SinglePubKey::FullKey(*pk),
                 }))
             })
             .unwrap()
@@ -156,7 +155,7 @@ impl JointOutput {
         Descriptor::Wsh(Wsh::new(compiled_policy).unwrap())
     }
 
-    pub fn descriptor(&self) -> Descriptor<bitcoin::PublicKey, Cached> {
+    pub fn descriptor(&self) -> Descriptor<bitcoin::PublicKey> {
         Descriptor::Wsh(Wsh::new(self.policy().compile().unwrap()).unwrap())
     }
 }
