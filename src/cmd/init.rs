@@ -259,7 +259,7 @@ pub fn run_init(wallet_dir: &std::path::Path, cmd: InitOpt) -> anyhow::Result<Cm
             let master_fingerprint = xpriv.fingerprint(&secp);
             let temp_wallet = match address_kind {
                 AddressKind::Wpkh => {
-                    let (internal, external) = (
+                    let (external, internal) = (
                         bdk::template::Bip84(xpriv, bdk::KeychainKind::External),
                         bdk::template::Bip84(xpriv, bdk::KeychainKind::Internal),
                     );
@@ -272,7 +272,7 @@ pub fn run_init(wallet_dir: &std::path::Path, cmd: InitOpt) -> anyhow::Result<Cm
                     .context("Initializing wallet with xpriv derived from seed phrase")?
                 }
                 AddressKind::Tr => {
-                    let (internal, external) = (
+                    let (external, internal) = (
                         bdk::template::Bip86(xpriv, bdk::KeychainKind::External),
                         bdk::template::Bip86(xpriv, bdk::KeychainKind::Internal),
                     );
